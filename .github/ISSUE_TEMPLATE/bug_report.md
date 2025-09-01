@@ -33,9 +33,6 @@ If applicable, please paste the output from the GitHub Actions workflow:
 # Paste CI output here
 ```
 
-## receipt.json
-Please paste the contents of your `eval_results/receipt.json` file:
-
 ```json
 # Paste receipt.json contents here
 ```
