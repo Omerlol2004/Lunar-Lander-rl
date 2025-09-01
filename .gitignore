@@ -1,0 +1,27 @@
+# Allow only canonical files
+
+# Completely ignore archive directory
+/archive/
+
+# eval_results - only allow receipt.json
+/eval_results/*
+!/eval_results/receipt.json
+
+# Ignore runs and logs directories
+/runs/*
+/logs/*
+
+# Ignore specific video files
+/videos/*.mp4
+/videos/*_new.gif
+/videos/smoke_*.gif
+
+# Ignore temporary and system files
+*.tmp
+*.bak
+*.log
+.DS_Store
+Thumbs.db
+
+# Preserve empty directories with .gitkeep
+!/**/.gitkeep

@@ -1,0 +1,16 @@
+name: lunar_lander_rl
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.9
+  - pip
+  - pip:
+    - gymnasium[box2d]==0.28.1
+    - stable-baselines3==2.0.0
+    - numpy==1.20.0
+    - torch==1.13.0
+    - matplotlib==3.10.5
+    - imageio==2.37.0
+    - pillow==11.3.0
+    - box2d-py==2.3.5

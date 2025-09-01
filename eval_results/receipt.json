@@ -1,0 +1,39 @@
+{
+  "status": "DONE",
+  "phase": "A_AND_B",
+  "summary": "Hybrid fine-tuned model (25% clean, 75% robust) achieving 267.15 reward in clean environments and 235.58 in robust environments.",
+  "stage_a": {
+    "clean_avg": 278.40941845273704,
+    "clean_std": 18.654996070800713,
+    "best_seed": 0,
+    "train_steps": 5029888,
+    "gate_passed": true
+  },
+  "stage_b": {
+    "ran": true,
+    "clean_avg": 267.14636361,
+    "clean_std": 31.772566140911415,
+    "robust_avg": 235.58282276999998,
+    "robust_std": 73.28501665932738,
+    "extreme_avg": 171.79,
+    "extreme_std": 121.13,
+    "episodes": 100,
+    "train_steps": 16397056,
+    "gate_passed": true
+  },
+  "artifacts": {
+    "best_model_clean": "models/best_model_clean.zip",
+    "best_model_robust": "models/best_model.zip",
+    "vecnorm": "models/lander_vecnorm.pkl",
+    "videos": [
+      "videos/lander_clean.gif",
+      "videos/lander_robust.gif",
+      "videos/lander_extreme.gif"
+    ],
+    "runbook": "RUNBOOK.md"
+  },
+  "proof": {
+    "best_model_robust_md5": "0CE11CCE48AEC6DF6FE5C24083F655C6"
+  },
+  "notes": "hybrid fine-tune 25% clean / 75% robust. Repository cleanup completed: archived non-essential files, kept only canonical models (best_model.zip, best_model_clean.zip, lander_vecnorm.pkl), videos (lander_clean.gif, lander_robust.gif, lander_extreme.gif), and maintained only the two most recent run directories."
+}
