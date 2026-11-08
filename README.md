@@ -27,6 +27,8 @@ This repository implements a **two-tier hybrid architecture**: a high-capacity A
 
 ## 2. System Architecture
 
+![Production Guidance & Inference Architecture](assets/architecture_topology.png)
+
 ```mermaid
 flowchart TD
     Client["Autonomous Flight Controller / Telemetry Client"] -->|HTTP / JSON| API["FastAPI Policy Serving Layer"]
@@ -51,6 +53,25 @@ flowchart TD
     
     OutputTelemetry --> Client
 ```
+
+### Architectural Subsystems & Data Flow
+
+1. **Ingress & Telemetry Validation (`lunar_lander.api`)**:
+   - Accepts continuous 8D state telemetry vectors `[x, y, vx, vy, θ, ω, leg1_contact, leg2_contact]` via HTTP/JSON.
+   - Pydantic v2 schemas enforce strict physical sanity boundaries ($|x| \le 5.0$, $y \in [-1, 5]$, $|v| \le 15$ m/s, $|\theta| \le \pi$), returning HTTP 422 for malformed payloads.
+2. **Defensive Safety Guardrail (`lunar_lander.safety`)**:
+   - Inspects raw physical telemetry before neural network evaluation.
+   - Evaluates three mission-critical recovery conditions: emergency de-tumble ($|\omega| > 2.5$ rad/s), attitude tilt recovery ($|\theta| > 0.45$ rad), and terminal descent braking ($y < 0.25$ m, $v_y < -1.2$ m/s).
+   - If an unsafe condition is detected, triggers deterministic thruster overrides instantly, bypassing model uncertainty.
+3. **Observation Normalization Transformer (`lunar_lander.policy`)**:
+   - Normalizes raw physical state vectors using frozen Welford empirical statistics ($\mu, \sigma$) cached in contiguous float32 memory.
+   - Strict `training=False` invariant prevents non-stationary policy drift during production serving.
+4. **PPO Actor-Critic Core (`stable_baselines3.common.policies.ActorCriticPolicy`)**:
+   - Dual-layer $[64, 64]$ tanh MLP policy running PyTorch forward pass in $<180$ µs.
+   - Computes deterministic argmax action, discrete probability distribution across all 4 motor commands, and expected cumulative return $V(s)$.
+5. **Actuator Multiplexer & Audit Telemetry**:
+   - Assembles final action command (`COAST`, `FIRE_LEFT`, `FIRE_MAIN`, `FIRE_RIGHT`), confidence score, critic value, safety decision, and execution latency.
+   - Dispatches structured telemetry to client in under 0.3 ms end-to-end.
 
 ---
 
