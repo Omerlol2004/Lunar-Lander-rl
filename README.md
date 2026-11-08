@@ -27,8 +27,6 @@ This repository implements a **two-tier hybrid architecture**: a high-capacity A
 
 ## 2. System Architecture
 
-![Production Guidance & Inference Architecture](assets/architecture_topology.png)
-
 ```mermaid
 flowchart TD
     Client["Autonomous Flight Controller / Telemetry Client"] -->|HTTP / JSON| API["FastAPI Policy Serving Layer"]
