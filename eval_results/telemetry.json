@@ -1,0 +1,44 @@
+{
+  "clean": {
+    "regime": "clean",
+    "episodes": 100,
+    "mean_reward": 263.46,
+    "std_reward": 32.17,
+    "median_reward": 268.43,
+    "iqr_reward": 22.73,
+    "min_reward": 134.48,
+    "max_reward": 310.42,
+    "success_rate_percent": 93.0,
+    "crash_rate_percent": 0.0,
+    "avg_steps": 267.8,
+    "safety_override_rate_percent": 0.0
+  },
+  "robust": {
+    "regime": "robust",
+    "episodes": 100,
+    "mean_reward": 219.6,
+    "std_reward": 103.26,
+    "median_reward": 257.51,
+    "iqr_reward": 47.79,
+    "min_reward": -227.71,
+    "max_reward": 316.86,
+    "success_rate_percent": 79.0,
+    "crash_rate_percent": 3.0,
+    "avg_steps": 323.3,
+    "safety_override_rate_percent": 0.98
+  },
+  "extreme": {
+    "regime": "extreme",
+    "episodes": 100,
+    "mean_reward": -8.64,
+    "std_reward": 150.19,
+    "median_reward": -35.8,
+    "iqr_reward": 142.84,
+    "min_reward": -273.95,
+    "max_reward": 288.87,
+    "success_rate_percent": 17.0,
+    "crash_rate_percent": 29.0,
+    "avg_steps": 178.3,
+    "safety_override_rate_percent": 6.09
+  }
+}

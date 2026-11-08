@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lunar-lander-rl"
+version = "2.0.0"
+description = "Production-grade PPO autonomous descent guidance system with defensive safety gating and sub-millisecond serving"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "Omer", email = "152614143+Omerlol2004@users.noreply.github.com" }
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "gymnasium[box2d]>=1.0.0",
+    "stable-baselines3>=2.4.0",
+    "torch>=2.2.0",
+    "numpy>=1.26.0",
+    "pydantic>=2.6.0",
+    "fastapi>=0.110.0",
+    "uvicorn>=0.28.0",
+    "pyyaml>=6.0.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.1.0",
+    "httpx>=0.27.0",
+    "matplotlib>=3.8.0",
+    "imageio>=2.33.0",
+    "reportlab>=4.1.0",
+]
+
+[project.scripts]
+lunar-lander = "lunar_lander.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"

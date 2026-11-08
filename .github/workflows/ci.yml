@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Test & Integrity Verification
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Create virtual environment and install package
+        run: |
+          uv venv .venv --python ${{ matrix.python-version }}
+          uv pip install --python .venv -e ".[dev]"
+
+      - name: Verify Cryptographic Manifest Integrity
+        run: |
+          bash scripts/verify.sh
+
+      - name: Run Hermetic Automated Test Suite
+        run: |
+          .venv/bin/pytest tests/ -v --cov=lunar_lander --cov-report=term-missing
+
+      - name: Run Sub-Millisecond Policy Benchmark
+        run: |
+          .venv/bin/python -m lunar_lander.cli benchmark --iterations 1000

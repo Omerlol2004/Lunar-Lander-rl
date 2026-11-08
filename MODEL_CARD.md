@@ -1,70 +1,52 @@
-# Lunar Lander Model Card
-
-## Overview
-
-This model is trained to control a lunar lander in the OpenAI Gym LunarLander-v3 environment. It can successfully land the spacecraft in both clean (standard) environments and robust environments with disturbances.
+# Model Card: LunarLander PPO Autonomous Descent Guidance Policy
 
 ## Model Details
+- **Developer**: Omer ([@Omerlol2004](https://github.com/Omerlol2004))
+- **Model Architecture**: Multi-Layer Perceptron (MLP) Actor-Critic (`[64, 64]`, `tanh` activations)
+- **Algorithm**: Proximal Policy Optimization (PPO) with Generalized Advantage Estimation (GAE)
+- **Input Dimensions**: 8-dimensional continuous telemetry vector `[x, y, vx, vy, θ, ω, leg1_contact, leg2_contact]`
+- **Output Dimensions**: 4 discrete thruster commands (`0: COAST`, `1: FIRE_LEFT`, `2: FIRE_MAIN`, `3: FIRE_RIGHT`)
+- **Framework**: PyTorch 2.5+, Stable-Baselines3 v2.4+, Gymnasium v1.4+
+- **Serving Layer**: FastAPI with sub-millisecond P99 latency (0.26 ms) on CPU
+- **License**: MIT
 
-- **Algorithm**: Proximal Policy Optimization (PPO)
-- **Architecture**: MLP Policy (ActorCriticPolicy)
-- **Training Recipe**:
-  - Initial training on clean environments
-  - Hybrid fine-tuning with 25% clean and 75% robust environments
-  - Seeds: 0 (primary)
-  - Total training steps: ~16.4M (including fine-tuning)
-  - Early stopping when performance gates were met
+---
 
-## Performance
+## Intended Use & Safety Envelope
+- **Primary Use**: Autonomous guidance, attitude control, and soft touchdown landing of a simulated planar lunar module under non-stationary aerodynamic turbulence.
+- **Out-of-Scope / Non-Recommended Use**: Physical spacecraft flight control without high-TRL hardware-in-the-loop (HIL) validation.
+- **Defensive Safety Guardrail**: A deterministic `SafetyFilter` wraps policy execution, overriding actions under severe attitude tumble ($|\omega| > 2.5$ rad/s), extreme tilt ($|\theta| > 0.45$ rad), or hazardous descent rate near ground ($y < 0.25$ m, $v_y < -1.2$ m/s).
 
-- **Clean Environment**: 267.15 average reward
-- **Robust Environment**: 235.58 average reward
-- **Extreme Environment**: 171.79 average reward
+---
 
-## Evaluation Protocol
+## Training Data & Curriculum
+- **Environment**: Gymnasium `LunarLander-v3`
+- **Curriculum**:
+  - **Stage A (Clean Baseline)**: 5.03M environment interactions on standard lunar gravity without atmospheric wind.
+  - **Stage B (Robust Hybrid Fine-Tuning)**: 11.37M additional steps trained on a 25% clean / 75% turbulent aerodynamic mix (`wind_power = 15.0`, `turbulence_power = 1.5`). Total steps: 16.4M.
+- **Observation Normalization**: Running empirical statistics (`lander_vecnorm.pkl`) frozen during inference with `norm_obs=True` and `norm_reward=False`.
 
-The model was evaluated across three environment types:
-1. **Clean**: Standard LunarLander-v3 environment
-2. **Robust**: Environment with domain randomization (gravity, engine power) and wind disturbances
-3. **Extreme**: Environment with more severe disturbances
+---
 
-Evaluation metrics are based on average rewards across 100 episodes for each environment type.
+## Quantitative Performance
 
-## Known Limitations
+Evaluation across 100 deterministic episodes per regime (seed=42):
 
-- Performance may degrade in environments with disturbance patterns significantly different from those seen during training
-- The model requires VecNormalize statistics for proper inference, especially in robust environments
-- While the hybrid model performs well in both clean and robust environments, specialized models might achieve marginally better performance in specific conditions
+| Operational Regime | Mean Reward | Median Reward | Interquartile Range | Solved Rate ($\ge 200$) | Safety Interventions |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **Clean Baseline** | 263.46 ± 32.17 | 268.43 | 22.73 | 93.0% | 0.0% |
+| **Robust (Wind 15.0)** | 219.60 ± 103.26 | 257.51 | 47.79 | 79.0% | 0.98% |
+| **Extreme (Wind 25.0)** | -8.64 ± 150.19 | -35.80 | 142.84 | 17.0% | 6.09% |
 
-## Usage Instructions
+### Latency Budget (Single-Core CPU)
+- **P50 Latency**: 0.176 ms (176 µs)
+- **P95 Latency**: 0.206 ms (206 µs)
+- **P99 Latency**: 0.263 ms (263 µs)
+- **Throughput**: 5,520 QPS
 
-```python
-from stable_baselines3 import PPO
-from stable_baselines3.common.vec_env import VecNormalize, DummyVecEnv
-import gym
+---
 
-# Create environment
-env = gym.make("LunarLander-v3")
-env = DummyVecEnv([lambda: env])
-
-# Load VecNormalize statistics (REQUIRED for robust/hybrid model)
-vec_normalize = VecNormalize.load("models/lander_vecnorm.pkl", env)
-vec_normalize.training = False  # Don't update normalization statistics during inference
-vec_normalize.norm_reward = False  # Don't normalize rewards during inference
-
-# Load model
-model = PPO.load("models/best_model.zip", env=vec_normalize)
-
-# Run inference
-obs = vec_normalize.reset()
-done = False
-while not done:
-    action, _ = model.predict(obs, deterministic=True)
-    obs, reward, done, info = vec_normalize.step(action)
-```
-
-## Important Note
-
-Always use `models/best_model.zip` together with `models/lander_vecnorm.pkl` for general use. This hybrid-trained model works well in both clean and robust environments. The `best_model_clean.zip` is kept only as a historical baseline and is not recommended for general use.
-
-Load robust model with VecNormalize (obs-only); eval with training=false, norm_obs=true, norm_reward=false.
+## Cryptographic Provenance
+- `models/best_model.zip` (SHA-256): `72b190bca2840f3cfdaa9ab8e7caa63564c8cd88434810cbb53f97777248b652`
+- `models/best_model_clean.zip` (SHA-256): `ee13d0b9b47f6de0b05b0138bb4c0b3673c9ad32121e1354d589f6f1419c6b89`
+- `models/lander_vecnorm.pkl` (SHA-256): `55047fad2aac321cef03ab3387a37d847b02de88f6db2b1780b306c7d739d35f`

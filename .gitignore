@@ -1,27 +1,64 @@
-# Allow only canonical files
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
 
-# Completely ignore archive directory
-/archive/
+# Virtual Environments & Packages
+.venv/
+venv/
+ENV/
+env/
+*.egg-info/
+dist/
+build/
+.eggs/
 
-# eval_results - only allow receipt.json
-/eval_results/*
-!/eval_results/receipt.json
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
 
-# Ignore runs and logs directories
+# IDE & Editor Settings
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# System Files
+.DS_Store
+Thumbs.db
+*.tmp
+*.bak
+*.log
+
+# Training runs & temporary experiment outputs
 /runs/*
 /logs/*
+!/runs/.gitkeep
+!/logs/.gitkeep
 
-# Ignore specific video files
+# Videos: Keep only canonical demonstration GIFs
 /videos/*.mp4
 /videos/*_new.gif
 /videos/smoke_*.gif
 
-# Ignore temporary and system files
-*.tmp
-*.bak
-*.log
-.DS_Store
-Thumbs.db
+# Evaluation results: Only track canonical receipt & telemetry summaries
+/eval_results/*
+!/eval_results/receipt.json
+!/eval_results/telemetry.json
+
+# Archive
+/archive/
+
+# Private Candidate Preparation Dossier & Notes
+# (Kept in user artifacts and local downloads, never committed to public git tree)
+private/
+dossier/
+*.candidate_notes.md
+*.interview_prep.pdf
+Candidate_Dossier_*.pdf
 
 # Preserve empty directories with .gitkeep
 !/**/.gitkeep

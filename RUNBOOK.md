@@ -1,212 +1,127 @@
-# LunarLander RL Pipeline Runbook
+# Operational Runbook: Autonomous Spacecraft Flight Guidance System
 
-## Quick Start Guide
+This runbook documents operational procedures for training, evaluation, sub-millisecond serving, latency benchmarking, and cryptographic verification.
 
-### Which model do I use?
+---
 
-For general use, always use `models/best_model.zip` together with `models/lander_vecnorm.pkl`. This hybrid-trained model works well in both clean and robust environments.
+## 1. Quick Reference Commands
 
-### How do I evaluate clean vs robust?
+| Task | Command | Target Latency / Metric |
+| :--- | :--- | :--- |
+| **Verify Integrity** | `bash scripts/verify.sh` or `lunar-lander verify` | 16/16 artifacts match SHA-256 |
+| **Run Test Suite** | `pytest tests/ -v --cov=lunar_lander` or `make test` | 29/29 passed in <5 seconds |
+| **Benchmark Latency** | `lunar-lander benchmark --iterations 2000` | P99 < 0.5 ms, QPS > 4,000 |
+| **Launch Serving API** | `lunar-lander serve --host 0.0.0.0 --port 8000` | Health: `/healthz`, `/readyz` |
+| **Run Clean Eval** | `lunar-lander eval --regime clean --episodes 100` | Expected reward: 263.5 ± 32 |
+| **Run Robust Eval** | `lunar-lander eval --regime robust --episodes 100` | Expected reward: 219.6 ± 103 |
+| **Run Extreme Eval** | `lunar-lander eval --regime extreme --episodes 100` | Active safety overrides: ~6% |
+
+---
+
+## 2. Environment Setup
+
+### Using `uv` (Recommended)
+```bash
+# Create Python 3.12 virtualenv and install editable package with dev dependencies
+uv venv .venv --python 3.12
+source .venv/bin/activate
+uv pip install -e ".[dev]"
+```
+
+### Using standard `pip`
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+```
+
+---
+
+## 3. Production Serving Procedures
+
+### Starting the Guidance Daemon
+```bash
+# Launch FastAPI uvicorn daemon
+export MODEL_PATH="models/best_model.zip"
+export VECNORM_PATH="models/lander_vecnorm.pkl"
+export DEVICE="cpu"
+
+uvicorn lunar_lander.api:app --host 0.0.0.0 --port 8000 --workers 1
+```
+
+### Health Probing
+```bash
+# Liveness
+curl -f http://localhost:8000/healthz
+
+# Readiness (verifies model & normalization weights are loaded into memory)
+curl -f http://localhost:8000/readyz
+
+# Telemetry & Request Counters
+curl http://localhost:8000/metrics
+```
+
+### Sending Single Guidance Query
+```bash
+curl -X POST http://localhost:8000/v1/predict \
+  -H "Content-Type: application/json" \
+  -d '{
+    "x": 0.02,
+    "y": 0.85,
+    "vx": -0.01,
+    "vy": -0.12,
+    "angle": 0.01,
+    "angular_velocity": 0.0,
+    "leg1_contact": 0.0,
+    "leg2_contact": 0.0
+  }'
+```
+
+---
+
+## 4. Empirical Evaluation Protocol
+
+To detect potential regressions against the canonical baseline:
 
 ```bash
-# Evaluate in clean environment (100 episodes)
-python scripts/eval_sb3_ref.py --model-path models/best_model.zip --vecnorm-path models/lander_vecnorm.pkl --episodes 100 --env-id LunarLander-v3
-
-# Evaluate in robust environment (100 episodes)
-python scripts/eval_sb3_ref.py --model-path models/best_model.zip --robust --vecnorm-path models/lander_vecnorm.pkl --episodes 100 --env-id LunarLander-v3
-
-# Evaluate in extreme environment (100 episodes)
-python scripts/eval_extreme.py --model-path models/best_model.zip --vecnorm-path models/lander_vecnorm.pkl --episodes 100 --env-id LunarLander-v3
+# Run 100-episode deterministic evaluation on all regimes and dump telemetry
+lunar-lander eval --regime all --episodes 100 --output eval_results/telemetry.json
 ```
 
-### Expected Performance Metrics (±10-15% tolerance)
+### Acceptance Tolerances
+- **Clean Regime**: Mean reward must remain $\ge 240.0$. Solved landing rate must be $\ge 90\%$.
+- **Robust Regime**: Mean reward must remain $\ge 200.0$. Crash rate must be $\le 5\%$.
+- Any crash rate $> 10\%$ in robust conditions constitutes a performance regression.
 
-- Clean (100 episodes): ~267 ± 32 (acceptable range: 227-307)
-- Robust p=0.02 (100 episodes): ~236 ± 73 (acceptable range: 200-271)
-- Extreme p=0.05 (100 episodes): ~172 ± 121 (acceptable range: 146-198)
+---
 
-If any score falls outside these ranges, flag as "performance regression".
+## 5. Artifact Verification & Checksum Maintenance
 
-This document contains the canonical commands for training, evaluation, and reflection in our standardized RL pipeline.
-
-## Prerequisites
-
-- Python 3.8+
-- Conda environment with required packages
+Whenever retraining models or regenerating demonstration assets:
 
 ```bash
-# Activate the conda environment
-conda activate rl-lander
+# Step 1: Recompute cryptographic hashes
+python -c "
+import hashlib, os
+files = [
+    'models/best_model.zip', 'models/best_model_clean.zip', 'models/lander_vecnorm.pkl',
+    'videos/lander_clean.gif', 'videos/lander_robust.gif', 'videos/lander_extreme.gif',
+    'eval_results/receipt.json', 'eval_results/telemetry.json',
+    'assets/benchmark_telemetry.svg', 'assets/benchmark_telemetry.png',
+    'assets/latency_profile.svg', 'assets/latency_profile.png'
+]
+lines = ['# SHA-256 Cryptographic Integrity Manifest', '# Format: <SHA-256>  <BYTE_SIZE>  <FILE_PATH>']
+for f in files:
+    if os.path.exists(f):
+        size = os.path.getsize(f)
+        h = hashlib.sha256()
+        with open(f, 'rb') as fp:
+            while chunk := fp.read(65536): h.update(chunk)
+        lines.append(f'{h.hexdigest()}  {size}  {f}')
+with open('CHECKSUMS.txt', 'w') as out:
+    out.write('\n'.join(lines) + '\n')
+"
+
+# Step 2: Validate manifest
+lunar-lander verify
 ```
-
-## Training Commands
-
-### Stage A: Clean Baseline
-
-```bash
-# Train clean baseline with seed 0
-conda run -n rl-lander python scripts/train.py --seed 0 --config configs/lunarlander_ppo_clean.yaml --out-dir runs/clean_seed_0
-
-# Train clean baseline with seed 1
-conda run -n rl-lander python scripts/train.py --seed 1 --config configs/lunarlander_ppo_clean.yaml --out-dir runs/clean_seed_1
-
-# Train clean baseline with seed 2
-conda run -n rl-lander python scripts/train.py --seed 2 --config configs/lunarlander_ppo_clean.yaml --out-dir runs/clean_seed_2
-```
-
-### Reflection and Retry
-
-After training, evaluate each seed to determine the best performer:
-
-```bash
-# Evaluate seed 0
-conda run -n rl-lander python scripts/eval_sb3_ref.py --model-path runs/clean_seed_0/final.zip --episodes 100
-
-# Evaluate seed 1
-conda run -n rl-lander python scripts/eval_sb3_ref.py --model-path runs/clean_seed_1/final.zip --episodes 100
-
-# Evaluate seed 2
-conda run -n rl-lander python scripts/eval_sb3_ref.py --model-path runs/clean_seed_2/final.zip --episodes 100
-```
-
-Select the best seed and copy it to the canonical location:
-
-```bash
-# Copy the best model to canonical location
-copy runs/clean_seed_X/final.zip models/best_model_clean.zip
-```
-
-### Stage B: Robust Model
-
-Only proceed if Stage A passed the gate (mean reward ≥ 250):
-
-```bash
-# Fine-tune from clean model with domain randomization and wind
-python scripts/train.py --seed 0 --config configs/lunarlander_ppo_robust.yaml --out-dir runs/robust_training_seed_0 --model-path models/best_model_clean.zip
-```
-
-After training, copy the model and VecNormalize stats to canonical locations:
-
-```bash
-# Copy the robust model to canonical location
-copy runs/robust_training_seed_0/final.zip models/best_model.zip
-copy runs/robust_training_seed_0/vecnormalize.pkl models/lander_vecnorm.pkl
-```
-
-## Evaluation Commands
-
-### Clean Environment
-
-```bash
-# Evaluate clean model on clean environment
-conda run -n rl-lander python scripts/eval_sb3_ref.py --model-path models/best_model_clean.zip --episodes 100 --env-id LunarLander-v3
-
-# Evaluate robust model on clean environment
-python scripts/eval_sb3_ref.py --model-path models/best_model.zip --vecnorm-path models/lander_vecnorm.pkl --episodes 100 --env-id LunarLander-v3
-
-# Generate video for clean model
-conda run -n rl-lander python scripts/generate_video.py --model-path models/best_model_clean.zip --output videos/lander_clean.gif --episodes 3 --env-id LunarLander-v3
-```
-
-### Robust Environment
-
-```bash
-# Evaluate robust model on environment with DR and wind
-python scripts/eval_sb3_ref.py --model-path models/best_model.zip --robust --vecnorm-path models/lander_vecnorm.pkl --episodes 100 --env-id LunarLander-v3
-
-# Generate video for robust model
-python scripts/generate_video.py --model-path models/best_model.zip --vecnorm-path models/lander_vecnorm.pkl --robust --output videos/lander_robust.gif --episodes 3 --env-id LunarLander-v3
-```
-
-### Extreme Environment
-
-```bash
-# Evaluate robust model on extreme environment with higher wind probability
-python scripts/eval_extreme.py --model-path models/best_model.zip --vecnorm-path models/lander_vecnorm.pkl --episodes 100 --env-id LunarLander-v3
-
-# Generate video for extreme conditions
-python scripts/generate_extreme_video.py --model-path models/best_model.zip --vecnorm-path models/lander_vecnorm.pkl --output videos/lander_extreme.gif --episodes 3 --env-id LunarLander-v3
-```
-
-## Canonical File Structure
-
-```
-├── configs/
-│   ├── lunarlander_ppo_clean.yaml   # Stage A config
-│   └── lunarlander_ppo_robust.yaml  # Stage B config
-├── scripts/
-│   ├── train.py                     # Training entrypoint
-│   ├── eval_sb3_ref.py              # Reference evaluator
-│   ├── eval_extreme.py              # Extreme environment evaluator
-│   ├── generate_video.py            # Video generation
-│   └── generate_extreme_video.py    # Extreme video generation
-├── models/
-│   ├── best_model_clean.zip         # Best Stage A model
-│   ├── best_model.zip               # Best Stage B model (robust)
-│   └── lander_vecnorm.pkl           # VecNormalize stats for robust model
-├── videos/
-│   ├── lander_clean.gif             # Clean environment video
-│   ├── lander_robust.gif            # Robust environment video
-│   └── lander_extreme.gif           # Extreme environment video
-├── eval_results/
-│   └── receipt.json                 # Evaluation results
-├── runs/                            # Training run directories
-├── logs/                            # Training metrics
-├── eval_results/                    # Evaluation results
-│   └── receipt.json                 # Final receipt
-├── videos/                          # Generated videos
-│   ├── lander_clean.gif             # Clean model video
-│   └── lander_robust.gif            # Robust model video (if applicable)
-└── RUNBOOK.md                       # This file
-```
-
-## Maintenance
-
-### Repository Verification
-
-To verify the repository is in a consistent state, run:
-
-```bash
-# Using make
-make verify
-
-# Or using the verification script directly
-bash scripts/verify.sh
-```
-
-This will check that:
-- All canonical files are present (best_model.zip, lander_vecnorm.pkl, best_model_clean.zip, receipt.json)
-- Only allowed files exist in videos/ directory
-- No extra JSON files exist in eval_results/ directory
-
-### Pre-commit Checks
-
-A pre-commit hook is installed that will prevent commits if:
-- Multiple JSON files exist in eval_results/ (only receipt.json should be present)
-- Required model files (best_model.zip, lander_vecnorm.pkl) are missing
-- Empty directories are present in the repository
-
-### Continuous Integration
-
-A GitHub Actions workflow automatically verifies the repository and runs performance tests:
-- Triggers: On pull requests, pushes to main, and weekly (Monday 6:00 AM)
-- Checks: Repository structure verification and performance evaluation
-- Performance ranges: Enforces the tolerances specified in "Expected Performance Metrics" section
-- Artifacts: Evaluation videos are uploaded as workflow artifacts
-
-To view CI results and artifacts:
-1. Check the status badge in the README
-2. Navigate to the Actions tab in the GitHub repository
-3. Select the most recent workflow run
-4. Download artifacts from the "Artifacts" section
-
-**Important:** For proper repository protection, enable branch protection rules that require status checks to pass before merging. See `BRANCH_PROTECTION.md` for detailed configuration instructions.
-
-### Archived Files
-
-Non-essential files are archived in the `archive/` directory, organized by type:
-- `archive/models/` - Additional model files not needed for standard operation
-- `archive/videos/` - Additional video files not needed for standard operation
-- `archive/eval_results/` - Historical evaluation results
-- `archive/runs/` - Historical training runs (only two most recent runs are kept in the main directory)
-- `archive/scripts/` - Additional scripts not needed for standard operation

@@ -27,8 +27,16 @@ class LunarLanderDRWrapper(gym.Wrapper):
 
     def reset(self, **kwargs):
         if self.dr_config:
-            # Apply domain randomization to the environment
-            self.env.unwrapped.randomize(self.dr_config)
+            # Apply domain randomization safely to physical simulation parameters
+            if "gravity" in self.dr_config:
+                low, high = self.dr_config["gravity"]
+                self.env.unwrapped.gravity = float(np.random.uniform(low, high))
+            if "wind_power" in self.dr_config:
+                low, high = self.dr_config["wind_power"]
+                self.env.unwrapped.wind_power = float(np.random.uniform(low, high))
+            if "turbulence_power" in self.dr_config:
+                low, high = self.dr_config["turbulence_power"]
+                self.env.unwrapped.turbulence_power = float(np.random.uniform(low, high))
         return self.env.reset(**kwargs)
 
 # Function to create environment

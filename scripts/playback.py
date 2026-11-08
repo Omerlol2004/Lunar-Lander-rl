@@ -1,124 +1,98 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """
-Playback script for Lunar Lander model demonstration.
-This script loads the best model and generates videos for clean and robust environments.
+Playback script for Lunar Lander demonstration and video recording.
+Generates demonstration recordings for Clean and Robust regimes.
 """
 
-import argparse
 import os
+import argparse
 import numpy as np
-import gym
-from stable_baselines3 import PPO
-from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 import imageio
+from lunar_lander.policy import PolicyEngine
+from lunar_lander.envs import EnvironmentFactory
 
-def make_env(robust=False, extreme=False):
-    """Create a LunarLander environment with optional robust settings."""
-    from gym.envs.box2d.lunar_lander import LunarLander
-    
-    def _init():
-        env = gym.make("LunarLander-v3")
-        if robust or extreme:
-            # Apply domain randomization
-            env.unwrapped.gravity = -10.0 * (1.0 + 0.2 * (np.random.rand() - 0.5))
-            env.unwrapped.engine_power = 13.0 * (1.0 + 0.2 * (np.random.rand() - 0.5))
-            
-            # Apply wind disturbance
-            wind_power = 0.02 if robust else 0.05  # Higher for extreme
-            env = LunarWindDisturbance(env, wind_power=wind_power)
-        return env
-    
-    return _init
 
-class LunarWindDisturbance(gym.Wrapper):
-    """Apply random wind forces to the lander."""
-    def __init__(self, env, wind_power=0.02):
-        super(LunarWindDisturbance, self).__init__(env)
-        self.wind_power = wind_power
-        
-    def step(self, action):
-        # Apply random wind force
-        self.env.unwrapped.lander.ApplyForceToCenter(
-            (self.wind_power * (np.random.rand() * 2 - 1), 0),
-            True
-        )
-        return self.env.step(action)
+def record_regime_video(
+    engine: PolicyEngine,
+    regime: str,
+    output_path: str,
+    episodes: int = 1,
+    seed: int = 42,
+    fps: int = 30,
+):
+    """Record an episode in the specified regime and export as a GIF."""
+    print(f"Recording {regime.upper()} demonstration to '{output_path}'...")
+    env = EnvironmentFactory.create(
+        regime=regime,
+        seed=seed,
+        render_mode="rgb_array",
+        vecnorm_path=engine.vecnorm_path,
+        training=False,
+    )
 
-def generate_video(model_path, vecnorm_path, output_path, episodes=1, robust=False, extreme=False):
-    """Generate a video of the model's performance."""
-    # Create environment
-    env_fn = make_env(robust=robust, extreme=extreme)
-    env = DummyVecEnv([env_fn])
-    
-    # Load VecNormalize statistics
-    vec_normalize = VecNormalize.load(vecnorm_path, env)
-    vec_normalize.training = False
-    vec_normalize.norm_reward = False
-    
-    # Load model
-    model = PPO.load(model_path, env=vec_normalize)
-    
-    # Setup for video recording
     frames = []
-    total_reward = 0
-    
-    for episode in range(episodes):
-        obs = vec_normalize.reset()
-        done = False
-        episode_reward = 0
-        
-        while not done:
-            # Get action from model
-            action, _ = model.predict(obs, deterministic=True)
-            
-            # Execute action
-            obs, reward, done, info = vec_normalize.step(action)
-            episode_reward += reward[0]
-            
-            # Render and capture frame
-            frame = env.render(mode='rgb_array')
-            frames.append(frame)
-        
-        total_reward += episode_reward
-        print(f"Episode {episode+1}/{episodes} completed")
-    
-    # Save video
-    print(f"Total frames: {len(frames)}")
-    print(f"First frame shape: {frames[0].shape}")
-    imageio.mimsave(output_path, frames, fps=30)
-    print(f"Video saved to {output_path}")
-    print(f"Average reward: {total_reward / episodes:.2f}")
+    total_reward = 0.0
+
+    for ep in range(episodes):
+        obs = env.reset()
+        done = [False]
+        ep_reward = 0.0
+
+        while not done[0]:
+            frame = env.render()
+            if frame is not None and frame.size > 0:
+                frames.append(frame)
+
+            raw_obs = obs[0]
+            result = engine.predict(raw_obs, deterministic=True, apply_safety=True)
+            action = np.array([result["action"]])
+
+            obs, reward, done, info = env.step(action)
+            ep_reward += float(reward[0])
+
+        total_reward += ep_reward
+        print(f"Episode {ep + 1}/{episodes} finished with reward: {ep_reward:.2f}")
+
+    env.close()
+
+    if frames:
+        os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+        imageio.mimsave(output_path, frames, fps=fps)
+        print(f"Video saved to {output_path} ({len(frames)} frames)")
+    else:
+        print("Warning: No video frames captured.")
+
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate videos of Lunar Lander model performance")
+    parser = argparse.ArgumentParser(description="Generate demonstration videos of Lunar Lander policy")
     parser.add_argument("--model", type=str, default="models/best_model.zip", help="Path to model file")
     parser.add_argument("--vecnorm", type=str, default="models/lander_vecnorm.pkl", help="Path to VecNormalize file")
-    parser.add_argument("--output-dir", type=str, default="videos", help="Output directory for videos")
-    parser.add_argument("--episodes", type=int, default=1, help="Number of episodes to record")
+    parser.add_argument("--output-dir", type=str, default="videos", help="Output directory")
+    parser.add_argument("--episodes", type=int, default=1, help="Number of episodes per regime")
+    parser.add_argument("--fps", type=int, default=30, help="Frames per second")
     args = parser.parse_args()
-    
-    # Create output directory if it doesn't exist
+
+    engine = PolicyEngine(model_path=args.model, vecnorm_path=args.vecnorm, device="cpu")
     os.makedirs(args.output_dir, exist_ok=True)
-    
-    # Generate videos for clean and robust environments
-    print("\nGenerating clean environment video...")
-    generate_video(
-        args.model, 
-        args.vecnorm, 
-        os.path.join(args.output_dir, "lander_clean.gif"), 
-        episodes=args.episodes
+
+    record_regime_video(
+        engine,
+        regime="clean",
+        output_path=os.path.join(args.output_dir, "lander_clean.gif"),
+        episodes=args.episodes,
+        fps=args.fps,
     )
-    
-    print("\nGenerating robust environment video...")
-    generate_video(
-        args.model, 
-        args.vecnorm, 
-        os.path.join(args.output_dir, "lander_robust.gif"), 
-        episodes=args.episodes, 
-        robust=True
+
+    record_regime_video(
+        engine,
+        regime="robust",
+        output_path=os.path.join(args.output_dir, "lander_robust.gif"),
+        episodes=args.episodes,
+        fps=args.fps,
     )
-    
-    print("\nDone! Videos generated successfully.")
+
+    print("\nPlayback demonstration generation complete.")
+
 
 if __name__ == "__main__":
     main()
